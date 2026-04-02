@@ -6,11 +6,9 @@
   "permissions": [
     "storage"
   ],
-  "background": {
-    "service_worker": "src/background.js"
-  },
   "action": {
-    "default_title": "Video Arrow Key Rebind"
+    "default_title": "Video Arrow Key Rebind",
+    "default_popup": "src/popup.html"
   },
   "options_page": "src/options.html",
   "content_scripts": [

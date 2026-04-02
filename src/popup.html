@@ -1,0 +1,88 @@
+<!doctype html>
+<html lang="zh-CN">
+  <head>
+    <meta charset="utf-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1">
+    <title>Video Arrow Key Rebind</title>
+    <link rel="stylesheet" href="popup.css">
+  </head>
+  <body>
+    <main class="popup-shell">
+      <section class="popup-card">
+        <p class="eyebrow">Quick Controls</p>
+        <h1>播放器快捷设置</h1>
+        <p class="summary">点击后直接改常用参数，不再立即跳转到完整配置页。</p>
+
+        <div class="switch-list">
+          <label class="switch-row">
+            <span>启用扩展</span>
+            <input id="enabled" type="checkbox">
+          </label>
+          <label class="switch-row">
+            <span>显示页面提示</span>
+            <input id="showOverlay" type="checkbox">
+          </label>
+        </div>
+
+        <div class="field-list">
+          <label>
+            <span>短按跳转秒数</span>
+            <select id="shortSeekSeconds">
+              <option value="3">3 秒</option>
+              <option value="5">5 秒</option>
+              <option value="10">10 秒</option>
+              <option value="15">15 秒</option>
+            </select>
+          </label>
+
+          <label>
+            <span>长按判定时间</span>
+            <select id="longPressMs">
+              <option value="180">180 ms</option>
+              <option value="280">280 ms</option>
+              <option value="400">400 ms</option>
+              <option value="600">600 ms</option>
+            </select>
+          </label>
+
+          <label>
+            <span>右键快进倍速</span>
+            <select id="fastForwardRate">
+              <option value="2">2x</option>
+              <option value="3">3x</option>
+              <option value="4">4x</option>
+              <option value="5">5x</option>
+            </select>
+          </label>
+
+          <label>
+            <span>左键快退倍速</span>
+            <select id="fastRewindRate">
+              <option value="2">2x</option>
+              <option value="3">3x</option>
+              <option value="4">4x</option>
+              <option value="5">5x</option>
+            </select>
+          </label>
+        </div>
+
+        <div class="site-preview">
+          <div>
+            <p class="site-preview-title">当前站点策略</p>
+            <p id="site-summary" class="site-preview-text">完整规则请进入设置页编辑</p>
+          </div>
+        </div>
+
+        <div id="status" class="status" aria-live="polite"></div>
+
+        <div class="button-row">
+          <button id="open-options" type="button" class="primary-button">完整设置</button>
+          <button id="reset-button" type="button" class="ghost-button">恢复默认</button>
+        </div>
+      </section>
+    </main>
+
+    <script src="settings.js"></script>
+    <script src="popup.js"></script>
+  </body>
+</html>
