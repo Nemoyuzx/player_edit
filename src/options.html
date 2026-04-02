@@ -1,0 +1,80 @@
+<!doctype html>
+<html lang="zh-CN">
+  <head>
+    <meta charset="utf-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1">
+    <title>Video Arrow Key Rebind</title>
+    <link rel="stylesheet" href="options.css">
+  </head>
+  <body>
+    <main class="page-shell">
+      <section class="hero-card">
+        <p class="eyebrow">Video Arrow Key Rebind</p>
+        <h1>左右方向键重映射</h1>
+        <p class="hero-copy">把网页视频播放器的左右方向键改成短按跳转、长按倍速，参数和生效站点都可以直接在这里配置。</p>
+      </section>
+
+      <form id="settings-form" class="settings-grid">
+        <section class="panel">
+          <h2>基础开关</h2>
+          <label class="switch-row">
+            <span>启用扩展</span>
+            <input id="enabled" type="checkbox">
+          </label>
+          <label class="switch-row">
+            <span>显示页面提示</span>
+            <input id="showOverlay" type="checkbox">
+          </label>
+        </section>
+
+        <section class="panel">
+          <h2>按键行为</h2>
+          <label>
+            <span>短按跳转秒数</span>
+            <input id="shortSeekSeconds" type="number" min="1" max="60" step="1">
+          </label>
+          <label>
+            <span>长按判定时间（毫秒）</span>
+            <input id="longPressMs" type="number" min="120" max="1200" step="10">
+          </label>
+          <label>
+            <span>长按右键快进倍速</span>
+            <input id="fastForwardRate" type="number" min="1.25" max="16" step="0.25">
+          </label>
+          <label>
+            <span>长按左键快退倍速</span>
+            <input id="fastRewindRate" type="number" min="1.25" max="16" step="0.25">
+          </label>
+        </section>
+
+        <section class="panel panel-wide">
+          <h2>站点规则</h2>
+          <label>
+            <span>生效模式</span>
+            <select id="siteMode">
+              <option value="all">全部网站生效</option>
+              <option value="whitelist">仅白名单网站生效</option>
+              <option value="blacklist">排除黑名单网站</option>
+            </select>
+          </label>
+          <label>
+            <span>站点列表</span>
+            <textarea id="siteRules" rows="6" placeholder="每行一个域名，例如：&#10;bilibili.com&#10;youtube.com"></textarea>
+          </label>
+          <p class="hint">支持域名或 URL，输入 example.com 时会同时匹配其子域名。使用白名单模式时，列表为空则默认所有站点都不生效。</p>
+        </section>
+
+        <section class="panel panel-wide action-panel">
+          <div id="status" class="status" aria-live="polite"></div>
+          <div class="button-row">
+            <button type="submit" class="primary-button">保存设置</button>
+            <button id="reset-button" type="button" class="ghost-button">恢复默认</button>
+          </div>
+        </section>
+      </form>
+    </main>
+
+    <script src="settings.js"></script>
+    <script src="options.js"></script>
+  </body>
+</html>

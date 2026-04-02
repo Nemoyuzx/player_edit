@@ -1,0 +1,361 @@
+(() => {
+  const HOLD_REWIND_INTERVAL_MS = 100;
+  const MIN_VIDEO_WIDTH = 160;
+  const MIN_VIDEO_HEIGHT = 90;
+  const configApi = globalThis.VideoArrowRebindConfig;
+
+  let activeHold = null;
+  let overlayState = null;
+  let settings = configApi?.DEFAULT_SETTINGS ?? {
+    enabled: true,
+    showOverlay: true,
+    shortSeekSeconds: 5,
+    longPressMs: 280,
+    fastForwardRate: 3,
+    fastRewindRate: 3,
+    siteMode: 'all',
+    siteRules: ''
+  };
+
+  function applySettings(nextSettings) {
+    settings = configApi?.normalizeSettings ? configApi.normalizeSettings(nextSettings) : nextSettings;
+  }
+
+  if (configApi?.loadSettings) {
+    configApi.loadSettings().then(applySettings).catch(() => {});
+  }
+
+  if (globalThis.chrome?.storage?.onChanged) {
+    globalThis.chrome.storage.onChanged.addListener((changes, areaName) => {
+      if (areaName !== 'sync' || !changes.videoArrowRebindSettings) {
+        return;
+      }
+
+      applySettings(changes.videoArrowRebindSettings.newValue);
+    });
+  }
+
+  function isEditableTarget(target) {
+    if (!(target instanceof HTMLElement)) {
+      return false;
+    }
+
+    if (target.isContentEditable) {
+      return true;
+    }
+
+    const editableAncestor = target.closest(
+      'input, textarea, select, [contenteditable=""], [contenteditable="true"]'
+    );
+
+    return Boolean(editableAncestor);
+  }
+
+  function isVideoUsable(video) {
+    if (!(video instanceof HTMLVideoElement)) {
+      return false;
+    }
+
+    if (!video.isConnected || video.readyState === 0) {
+      return false;
+    }
+
+    const rect = video.getBoundingClientRect();
+    if (rect.width < MIN_VIDEO_WIDTH || rect.height < MIN_VIDEO_HEIGHT) {
+      return false;
+    }
+
+    const style = window.getComputedStyle(video);
+    if (style.display === 'none' || style.visibility === 'hidden' || Number(style.opacity) === 0) {
+      return false;
+    }
+
+    return rect.bottom > 0 && rect.right > 0 && rect.top < window.innerHeight && rect.left < window.innerWidth;
+  }
+
+  function getPreferredVideo() {
+    const videos = Array.from(document.querySelectorAll('video')).filter(isVideoUsable);
+
+    if (videos.length === 0) {
+      return null;
+    }
+
+    const playingVideo = videos.find((video) => !video.paused && !video.ended);
+    if (playingVideo) {
+      return playingVideo;
+    }
+
+    return videos.sort((left, right) => {
+      const leftRect = left.getBoundingClientRect();
+      const rightRect = right.getBoundingClientRect();
+      return rightRect.width * rightRect.height - leftRect.width * leftRect.height;
+    })[0];
+  }
+
+  function clampTime(video, nextTime) {
+    const duration = Number.isFinite(video.duration) ? video.duration : Number.MAX_SAFE_INTEGER;
+    return Math.min(Math.max(nextTime, 0), duration);
+  }
+
+  function ensureOverlay() {
+    if (overlayState?.root?.isConnected) {
+      return overlayState;
+    }
+
+    const root = document.createElement('div');
+    root.className = 'video-arrow-rebind-overlay';
+
+    const title = document.createElement('div');
+    title.className = 'video-arrow-rebind-title';
+
+    const detail = document.createElement('div');
+    detail.className = 'video-arrow-rebind-detail';
+
+    root.append(title, detail);
+
+    const mount = document.documentElement || document.body;
+    if (!mount) {
+      return null;
+    }
+
+    mount.appendChild(root);
+    overlayState = {
+      root,
+      title,
+      detail,
+      hideTimer: null
+    };
+
+    return overlayState;
+  }
+
+  function showOverlay(message, detailText, accent = false, duration = 750) {
+    if (!settings.showOverlay) {
+      return;
+    }
+
+    const overlay = ensureOverlay();
+    if (!overlay) {
+      return;
+    }
+
+    overlay.title.textContent = message;
+    overlay.detail.textContent = detailText || '';
+    overlay.root.classList.toggle('is-accent', accent);
+    overlay.root.classList.add('is-visible');
+
+    if (overlay.hideTimer) {
+      window.clearTimeout(overlay.hideTimer);
+      overlay.hideTimer = null;
+    }
+
+    if (duration > 0) {
+      overlay.hideTimer = window.setTimeout(() => {
+        overlay.root.classList.remove('is-visible');
+      }, duration);
+    }
+  }
+
+  function hideOverlay() {
+    if (!overlayState) {
+      return;
+    }
+
+    if (overlayState.hideTimer) {
+      window.clearTimeout(overlayState.hideTimer);
+      overlayState.hideTimer = null;
+    }
+
+    overlayState.root.classList.remove('is-visible');
+  }
+
+  function stopEvent(event) {
+    event.preventDefault();
+    event.stopPropagation();
+    event.stopImmediatePropagation();
+  }
+
+  function seekVideo(video, deltaSeconds) {
+    const nextTime = clampTime(video, video.currentTime + deltaSeconds);
+    const actualDelta = Math.round(nextTime - video.currentTime);
+    video.currentTime = nextTime;
+
+    if (actualDelta === 0) {
+      return;
+    }
+
+    const directionText = actualDelta > 0 ? '快进' : '快退';
+    showOverlay(
+      `${directionText} ${Math.abs(actualDelta)}s`,
+      `短按方向键：固定跳转 ${settings.shortSeekSeconds} 秒`
+    );
+  }
+
+  function beginLongPress(holdState) {
+    const { key, video } = holdState;
+    holdState.longPressActive = true;
+
+    if (key === 'ArrowRight') {
+      holdState.originalPlaybackRate = video.playbackRate;
+      holdState.wasPausedBeforeFastForward = video.paused;
+      video.playbackRate = settings.fastForwardRate;
+
+      if (video.paused) {
+        const playPromise = video.play();
+        if (playPromise?.catch) {
+          playPromise.catch(() => {});
+        }
+      }
+
+      showOverlay(`${settings.fastForwardRate}x 倍速快进中`, '松开右方向键恢复原速', true, 0);
+      return;
+    }
+
+    holdState.wasPausedBeforeRewind = video.paused;
+    if (!video.paused) {
+      video.pause();
+    }
+
+    holdState.rewindTimer = window.setInterval(() => {
+      const stepSeconds = settings.fastRewindRate * (HOLD_REWIND_INTERVAL_MS / 1000);
+      video.currentTime = clampTime(video, video.currentTime - stepSeconds);
+    }, HOLD_REWIND_INTERVAL_MS);
+
+    showOverlay(`${settings.fastRewindRate}x 快退中`, '松开左方向键停止快退', true, 0);
+  }
+
+  function clearHoldState(applyShortPress) {
+    if (!activeHold) {
+      return;
+    }
+
+    const holdState = activeHold;
+    activeHold = null;
+
+    if (holdState.longPressTimer) {
+      window.clearTimeout(holdState.longPressTimer);
+    }
+
+    if (holdState.rewindTimer) {
+      window.clearInterval(holdState.rewindTimer);
+    }
+
+    if (holdState.longPressActive) {
+      if (holdState.key === 'ArrowRight') {
+        holdState.video.playbackRate = holdState.originalPlaybackRate ?? 1;
+        if (holdState.wasPausedBeforeFastForward && !holdState.video.paused) {
+          holdState.video.pause();
+        }
+      } else if (!holdState.wasPausedBeforeRewind) {
+        const playPromise = holdState.video.play();
+        if (playPromise?.catch) {
+          playPromise.catch(() => {});
+        }
+      }
+
+      showOverlay('已恢复正常播放', '短按左右方向键可跳转 5 秒', false, 550);
+      return;
+    }
+
+    if (applyShortPress) {
+      const deltaSeconds = holdState.key === 'ArrowRight' ? settings.shortSeekSeconds : -settings.shortSeekSeconds;
+      seekVideo(holdState.video, deltaSeconds);
+      return;
+    }
+
+    hideOverlay();
+  }
+
+  function shouldHandleKey(event) {
+    if (!settings.enabled) {
+      return false;
+    }
+
+    if (event.key !== 'ArrowLeft' && event.key !== 'ArrowRight') {
+      return false;
+    }
+
+    if (event.altKey || event.ctrlKey || event.metaKey) {
+      return false;
+    }
+
+    if (isEditableTarget(event.target)) {
+      return false;
+    }
+
+    if (configApi?.isCurrentSiteAllowed && !configApi.isCurrentSiteAllowed(settings, window.location.hostname)) {
+      return false;
+    }
+
+    return Boolean(getPreferredVideo());
+  }
+
+  window.addEventListener(
+    'keydown',
+    (event) => {
+      if (!shouldHandleKey(event)) {
+        return;
+      }
+
+      if (activeHold?.key === event.key) {
+        stopEvent(event);
+        return;
+      }
+
+      if (event.repeat) {
+        stopEvent(event);
+        return;
+      }
+
+      const video = getPreferredVideo();
+      if (!video) {
+        return;
+      }
+
+      stopEvent(event);
+
+      if (activeHold) {
+        clearHoldState(false);
+      }
+
+      activeHold = {
+        key: event.key,
+        video,
+        longPressActive: false,
+        longPressTimer: window.setTimeout(() => {
+          if (!activeHold || activeHold.key !== event.key || activeHold.video !== video) {
+            return;
+          }
+
+          beginLongPress(activeHold);
+        }, settings.longPressMs),
+        rewindTimer: null,
+        originalPlaybackRate: null,
+        wasPausedBeforeRewind: false,
+        wasPausedBeforeFastForward: false
+      };
+    },
+    true
+  );
+
+  window.addEventListener(
+    'keyup',
+    (event) => {
+      if (!activeHold || activeHold.key !== event.key) {
+        return;
+      }
+
+      stopEvent(event);
+      clearHoldState(true);
+    },
+    true
+  );
+
+  window.addEventListener(
+    'blur',
+    () => {
+      clearHoldState(false);
+    },
+    true
+  );
+})();

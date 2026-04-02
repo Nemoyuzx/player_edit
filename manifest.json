@@ -1,0 +1,32 @@
+{
+  "manifest_version": 3,
+  "name": "Video Arrow Key Rebind",
+  "version": "1.1.0",
+  "description": "Short press left/right to seek 5 seconds, long press to trigger bilibili-style fast playback on HTML5 videos.",
+  "permissions": [
+    "storage"
+  ],
+  "background": {
+    "service_worker": "src/background.js"
+  },
+  "action": {
+    "default_title": "Video Arrow Key Rebind"
+  },
+  "options_page": "src/options.html",
+  "content_scripts": [
+    {
+      "matches": [
+        "<all_urls>"
+      ],
+      "js": [
+        "src/settings.js",
+        "src/content.js"
+      ],
+      "css": [
+        "src/content.css"
+      ],
+      "run_at": "document_start",
+      "all_frames": true
+    }
+  ]
+}
