@@ -11,7 +11,7 @@
       <section class="popup-card">
         <p class="eyebrow">Quick Controls</p>
         <h1>播放器快捷设置</h1>
-        <p class="summary">点击后直接改常用参数，不再立即跳转到完整配置页。</p>
+        <p class="summary">直接修改常用参数，数字改完会自动保存。</p>
 
         <div class="switch-list">
           <label class="switch-row">
@@ -27,42 +27,22 @@
         <div class="field-list">
           <label>
             <span>短按跳转秒数</span>
-            <select id="shortSeekSeconds">
-              <option value="3">3 秒</option>
-              <option value="5">5 秒</option>
-              <option value="10">10 秒</option>
-              <option value="15">15 秒</option>
-            </select>
+            <input id="shortSeekSeconds" type="number" min="1" max="60" step="1" inputmode="numeric">
           </label>
 
           <label>
             <span>长按判定时间</span>
-            <select id="longPressMs">
-              <option value="180">180 ms</option>
-              <option value="280">280 ms</option>
-              <option value="400">400 ms</option>
-              <option value="600">600 ms</option>
-            </select>
+            <input id="longPressMs" type="number" min="120" max="1200" step="10" inputmode="numeric">
           </label>
 
           <label>
             <span>右键快进倍速</span>
-            <select id="fastForwardRate">
-              <option value="2">2x</option>
-              <option value="3">3x</option>
-              <option value="4">4x</option>
-              <option value="5">5x</option>
-            </select>
+            <input id="fastForwardRate" type="number" min="1.25" max="16" step="0.25" inputmode="decimal">
           </label>
 
           <label>
             <span>左键快退倍速</span>
-            <select id="fastRewindRate">
-              <option value="2">2x</option>
-              <option value="3">3x</option>
-              <option value="4">4x</option>
-              <option value="5">5x</option>
-            </select>
+            <input id="fastRewindRate" type="number" min="1.25" max="16" step="0.25" inputmode="decimal">
           </label>
         </div>
 
@@ -75,8 +55,10 @@
 
         <div id="status" class="status" aria-live="polite"></div>
 
+        <button id="open-options-link" type="button" class="text-button">跳转到完整设置</button>
+
         <div class="button-row">
-          <button id="open-options" type="button" class="primary-button">完整设置</button>
+          <button id="finish-button" type="button" class="primary-button">完成设置</button>
           <button id="reset-button" type="button" class="ghost-button">恢复默认</button>
         </div>
       </section>

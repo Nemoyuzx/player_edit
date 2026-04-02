@@ -3,7 +3,8 @@
   const status = document.querySelector('#status');
   const siteSummary = document.querySelector('#site-summary');
   const resetButton = document.querySelector('#reset-button');
-  const openOptionsButton = document.querySelector('#open-options');
+  const finishButton = document.querySelector('#finish-button');
+  const openOptionsLink = document.querySelector('#open-options-link');
 
   const fields = {
     enabled: document.querySelector('#enabled'),
@@ -89,6 +90,14 @@
         setStatus('保存失败，请重试');
       });
     });
+
+    if (field.type === 'number') {
+      field.addEventListener('blur', () => {
+        saveCurrentValues().catch(() => {
+          setStatus('保存失败，请重试');
+        });
+      });
+    }
   });
 
   resetButton.addEventListener('click', async () => {
@@ -97,7 +106,11 @@
     setStatus('已恢复默认设置');
   });
 
-  openOptionsButton.addEventListener('click', () => {
+  finishButton.addEventListener('click', () => {
+    window.close();
+  });
+
+  openOptionsLink.addEventListener('click', () => {
     chrome.runtime.openOptionsPage();
     window.close();
   });
