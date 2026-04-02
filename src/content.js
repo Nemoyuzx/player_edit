@@ -17,8 +17,39 @@
     siteRules: ''
   };
 
+  function getHoldOverlayCopy(key) {
+    if (key === 'ArrowRight') {
+      return {
+        title: `${settings.fastForwardRate}x 倍速快进中`,
+        detail: '松开右方向键恢复原速'
+      };
+    }
+
+    return {
+      title: `${settings.fastRewindRate}x 快退中`,
+      detail: '松开左方向键停止快退'
+    };
+  }
+
+  function refreshOverlayForCurrentState() {
+    if (!overlayState?.root?.classList.contains('is-visible')) {
+      return;
+    }
+
+    if (activeHold?.longPressActive) {
+      const overlayCopy = getHoldOverlayCopy(activeHold.key);
+      showOverlay(overlayCopy.title, overlayCopy.detail, true, 0);
+      return;
+    }
+
+    if (!settings.showOverlay) {
+      hideOverlay();
+    }
+  }
+
   function applySettings(nextSettings) {
     settings = configApi?.normalizeSettings ? configApi.normalizeSettings(nextSettings) : nextSettings;
+    refreshOverlayForCurrentState();
   }
 
   if (configApi?.loadSettings) {
@@ -207,7 +238,8 @@
         }
       }
 
-      showOverlay(`${settings.fastForwardRate}x 倍速快进中`, '松开右方向键恢复原速', true, 0);
+      const overlayCopy = getHoldOverlayCopy(key);
+      showOverlay(overlayCopy.title, overlayCopy.detail, true, 0);
       return;
     }
 
@@ -221,7 +253,8 @@
       video.currentTime = clampTime(video, video.currentTime - stepSeconds);
     }, HOLD_REWIND_INTERVAL_MS);
 
-    showOverlay(`${settings.fastRewindRate}x 快退中`, '松开左方向键停止快退', true, 0);
+    const overlayCopy = getHoldOverlayCopy(key);
+    showOverlay(overlayCopy.title, overlayCopy.detail, true, 0);
   }
 
   function clearHoldState(applyShortPress) {
@@ -253,7 +286,7 @@
         }
       }
 
-      showOverlay('已恢复正常播放', '短按左右方向键可跳转 5 秒', false, 550);
+      showOverlay('已恢复正常播放', `短按左右方向键可跳转 ${settings.shortSeekSeconds} 秒`, false, 550);
       return;
     }
 
