@@ -6,6 +6,9 @@
 
   let activeHold = null;
   let overlayState = null;
+  let playbackLockState = null;
+  const pressedArrowKeys = new Set();
+  let arrowSpeedLockLatched = false;
   let settings = configApi?.DEFAULT_SETTINGS ?? {
     enabled: true,
     showOverlay: true,
@@ -31,8 +34,20 @@
     };
   }
 
+  function getPlaybackLockOverlayCopy() {
+    return {
+      title: `已锁定 ${settings.fastForwardRate}x 倍速播放`,
+      detail: '同时按下上下方向键可解除'
+    };
+  }
+
   function refreshOverlayForCurrentState() {
     if (!overlayState?.root?.classList.contains('is-visible')) {
+      return;
+    }
+
+    if (!settings.showOverlay) {
+      hideOverlay();
       return;
     }
 
@@ -42,13 +57,35 @@
       return;
     }
 
-    if (!settings.showOverlay) {
-      hideOverlay();
+    if (playbackLockState?.video?.isConnected) {
+      const overlayCopy = getPlaybackLockOverlayCopy();
+      showOverlay(overlayCopy.title, overlayCopy.detail, true, 0);
+      return;
     }
+    
+    hideOverlay();
   }
 
   function applySettings(nextSettings) {
     settings = configApi?.normalizeSettings ? configApi.normalizeSettings(nextSettings) : nextSettings;
+
+    if (
+      playbackLockState &&
+      (!settings.enabled ||
+        (configApi?.isCurrentSiteAllowed &&
+          !configApi.isCurrentSiteAllowed(settings, window.location.hostname)))
+    ) {
+      clearPlaybackLock(false);
+    }
+
+    if (
+      playbackLockState?.video?.isConnected &&
+      Number.isFinite(settings.fastForwardRate) &&
+      settings.fastForwardRate > 0
+    ) {
+      playbackLockState.video.playbackRate = settings.fastForwardRate;
+    }
+
     refreshOverlayForCurrentState();
   }
 
@@ -200,6 +237,45 @@
     overlayState.root.classList.remove('is-visible');
   }
 
+  function clearPlaybackLock(showMessage = false) {
+    if (!playbackLockState) {
+      return;
+    }
+
+    const lockedVideo = playbackLockState.video;
+    if (lockedVideo?.isConnected) {
+      lockedVideo.playbackRate = playbackLockState.originalPlaybackRate ?? 1;
+    }
+
+    playbackLockState = null;
+
+    if (showMessage) {
+      showOverlay('已解除倍速锁定', '同时按下上下方向键可再次开启', false, 900);
+    }
+  }
+
+  function togglePlaybackLock(video) {
+    if (!video) {
+      return false;
+    }
+
+    if (playbackLockState?.video === video) {
+      clearPlaybackLock(true);
+      return true;
+    }
+
+    clearPlaybackLock(false);
+    playbackLockState = {
+      video,
+      originalPlaybackRate: video.playbackRate
+    };
+    video.playbackRate = settings.fastForwardRate;
+
+    const overlayCopy = getPlaybackLockOverlayCopy();
+    showOverlay(overlayCopy.title, overlayCopy.detail, true, 0);
+    return true;
+  }
+
   function stopEvent(event) {
     event.preventDefault();
     event.stopPropagation();
@@ -286,6 +362,12 @@
         }
       }
 
+      if (playbackLockState?.video === holdState.video) {
+        const overlayCopy = getPlaybackLockOverlayCopy();
+        showOverlay(overlayCopy.title, overlayCopy.detail, true, 0);
+        return;
+      }
+
       showOverlay('已恢复正常播放', `短按左右方向键可跳转 ${settings.shortSeekSeconds} 秒`, false, 550);
       return;
     }
@@ -323,9 +405,60 @@
     return Boolean(getPreferredVideo());
   }
 
+  function shouldHandlePlaybackLockKey(event) {
+    if (!settings.enabled) {
+      return false;
+    }
+
+    if (event.key !== 'ArrowUp' && event.key !== 'ArrowDown') {
+      return false;
+    }
+
+    if (event.altKey || event.ctrlKey || event.metaKey) {
+      return false;
+    }
+
+    if (isEditableTarget(event.target)) {
+      return false;
+    }
+
+    if (configApi?.isCurrentSiteAllowed && !configApi.isCurrentSiteAllowed(settings, window.location.hostname)) {
+      return false;
+    }
+
+    return Boolean(getPreferredVideo());
+  }
+
   window.addEventListener(
     'keydown',
     (event) => {
+      if (event.key === 'ArrowUp' || event.key === 'ArrowDown') {
+        const canHandlePlaybackLockKey = shouldHandlePlaybackLockKey(event);
+        const otherArrowKey = event.key === 'ArrowUp' ? 'ArrowDown' : 'ArrowUp';
+        const wasOtherArrowPressed = pressedArrowKeys.has(otherArrowKey);
+        pressedArrowKeys.add(event.key);
+
+        if (!canHandlePlaybackLockKey) {
+          return;
+        }
+
+        stopEvent(event);
+
+        if (arrowSpeedLockLatched) {
+          return;
+        }
+
+        if (!event.repeat && wasOtherArrowPressed) {
+          if (activeHold) {
+            clearHoldState(false);
+          }
+
+          togglePlaybackLock(getPreferredVideo());
+          arrowSpeedLockLatched = true;
+          return;
+        }
+      }
+
       if (!shouldHandleKey(event)) {
         return;
       }
@@ -374,6 +507,24 @@
   window.addEventListener(
     'keyup',
     (event) => {
+      if (event.key === 'ArrowUp' || event.key === 'ArrowDown') {
+        pressedArrowKeys.delete(event.key);
+
+        if (!shouldHandlePlaybackLockKey(event)) {
+          return;
+        }
+
+        stopEvent(event);
+
+        if (arrowSpeedLockLatched) {
+          if (!pressedArrowKeys.has('ArrowUp') && !pressedArrowKeys.has('ArrowDown')) {
+            arrowSpeedLockLatched = false;
+          }
+        }
+
+        return;
+      }
+
       if (!activeHold || activeHold.key !== event.key) {
         return;
       }
@@ -387,6 +538,8 @@
   window.addEventListener(
     'blur',
     () => {
+      pressedArrowKeys.clear();
+      arrowSpeedLockLatched = false;
       clearHoldState(false);
     },
     true
