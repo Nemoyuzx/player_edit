@@ -6,6 +6,7 @@
     shortSeekSeconds: 5,
     longPressMs: 280,
     fastForwardRate: 3,
+    playbackLockSeekMultiplier: null,
     fastRewindRate: 3,
     siteMode: 'all',
     siteRules: ''
@@ -16,6 +17,19 @@
   }
 
   function clampNumber(value, fallback, min, max) {
+    const numeric = Number(value);
+    if (!Number.isFinite(numeric)) {
+      return fallback;
+    }
+
+    return Math.min(Math.max(numeric, min), max);
+  }
+
+  function clampOptionalNumber(value, fallback, min, max) {
+    if (value === '' || value === null || typeof value === 'undefined') {
+      return fallback;
+    }
+
     const numeric = Number(value);
     if (!Number.isFinite(numeric)) {
       return fallback;
@@ -62,6 +76,7 @@
       shortSeekSeconds: clampNumber(rawSettings.shortSeekSeconds, DEFAULT_SETTINGS.shortSeekSeconds, 1, 60),
       longPressMs: clampNumber(rawSettings.longPressMs, DEFAULT_SETTINGS.longPressMs, 120, 1200),
       fastForwardRate: clampNumber(rawSettings.fastForwardRate, DEFAULT_SETTINGS.fastForwardRate, 1.25, 16),
+      playbackLockSeekMultiplier: clampOptionalNumber(rawSettings.playbackLockSeekMultiplier, null, 1, 16),
       fastRewindRate: clampNumber(rawSettings.fastRewindRate, DEFAULT_SETTINGS.fastRewindRate, 1.25, 16),
       siteMode: ['all', 'whitelist', 'blacklist'].includes(rawSettings.siteMode) ? rawSettings.siteMode : DEFAULT_SETTINGS.siteMode,
       siteRules: normalizeSiteRules(rawSettings.siteRules)

@@ -12,6 +12,7 @@
     shortSeekSeconds: document.querySelector('#shortSeekSeconds'),
     longPressMs: document.querySelector('#longPressMs'),
     fastForwardRate: document.querySelector('#fastForwardRate'),
+    playbackLockSeekMultiplier: document.querySelector('#playbackLockSeekMultiplier'),
     fastRewindRate: document.querySelector('#fastRewindRate')
   };
 
@@ -55,6 +56,8 @@
     fields.shortSeekSeconds.value = String(settings.shortSeekSeconds);
     fields.longPressMs.value = String(settings.longPressMs);
     fields.fastForwardRate.value = String(settings.fastForwardRate);
+    fields.playbackLockSeekMultiplier.value =
+      settings.playbackLockSeekMultiplier == null ? '' : String(settings.playbackLockSeekMultiplier);
     fields.fastRewindRate.value = String(settings.fastRewindRate);
     siteSummary.textContent = describeSiteMode(settings);
   }
@@ -67,6 +70,7 @@
       shortSeekSeconds: fields.shortSeekSeconds.value,
       longPressMs: fields.longPressMs.value,
       fastForwardRate: fields.fastForwardRate.value,
+      playbackLockSeekMultiplier: fields.playbackLockSeekMultiplier.value,
       fastRewindRate: fields.fastRewindRate.value
     });
   }

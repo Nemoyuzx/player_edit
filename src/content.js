@@ -15,6 +15,7 @@
     shortSeekSeconds: 5,
     longPressMs: 280,
     fastForwardRate: 3,
+    playbackLockSeekMultiplier: null,
     fastRewindRate: 3,
     siteMode: 'all',
     siteRules: ''
@@ -35,10 +36,25 @@
   }
 
   function getPlaybackLockOverlayCopy() {
+    const seekMultiplier = getEffectivePlaybackLockSeekMultiplier();
+
     return {
       title: `已锁定 ${settings.fastForwardRate}x 倍速播放`,
-      detail: '同时按下上下方向键可解除'
+      detail: `短按左右方向键按 ${formatSeconds(settings.shortSeekSeconds * seekMultiplier)} 秒跳转，同时按下上下方向键可解除`
     };
+  }
+
+  function getEffectivePlaybackLockSeekMultiplier() {
+    return settings.playbackLockSeekMultiplier ?? settings.fastForwardRate;
+  }
+
+  function formatSeconds(value) {
+    if (!Number.isFinite(value)) {
+      return '0';
+    }
+
+    const rounded = Math.round(value * 100) / 100;
+    return Number.isInteger(rounded) ? String(rounded) : rounded.toFixed(2).replace(/\.?0+$/, '');
   }
 
   function refreshOverlayForCurrentState() {
@@ -62,7 +78,7 @@
       showOverlay(overlayCopy.title, overlayCopy.detail, true, 0);
       return;
     }
-    
+
     hideOverlay();
   }
 
@@ -197,7 +213,7 @@
     return overlayState;
   }
 
-  function showOverlay(message, detailText, accent = false, duration = 750) {
+  function showOverlay(message, detailText, accent = false, duration = 750, restorePersistentState = false) {
     if (!settings.showOverlay) {
       return;
     }
@@ -219,6 +235,12 @@
 
     if (duration > 0) {
       overlay.hideTimer = window.setTimeout(() => {
+        overlay.hideTimer = null;
+        if (restorePersistentState) {
+          refreshOverlayForCurrentState();
+          return;
+        }
+
         overlay.root.classList.remove('is-visible');
       }, duration);
     }
@@ -284,7 +306,7 @@
 
   function seekVideo(video, deltaSeconds) {
     const nextTime = clampTime(video, video.currentTime + deltaSeconds);
-    const actualDelta = Math.round(nextTime - video.currentTime);
+    const actualDelta = nextTime - video.currentTime;
     video.currentTime = nextTime;
 
     if (actualDelta === 0) {
@@ -292,10 +314,24 @@
     }
 
     const directionText = actualDelta > 0 ? '快进' : '快退';
+    const isPlaybackLockSeeking = playbackLockState?.video === video;
+    const detailText = isPlaybackLockSeeking
+      ? `当前仍保持 ${settings.fastForwardRate}x 倍速锁定`
+      : `短按方向键：固定跳转 ${formatSeconds(settings.shortSeekSeconds)} 秒`;
+
     showOverlay(
-      `${directionText} ${Math.abs(actualDelta)}s`,
-      `短按方向键：固定跳转 ${settings.shortSeekSeconds} 秒`
+      `${directionText} ${formatSeconds(Math.abs(actualDelta))}s`,
+      detailText,
+      isPlaybackLockSeeking,
+      isPlaybackLockSeeking ? 900 : 750,
+      isPlaybackLockSeeking
     );
+  }
+
+  function getSeekDeltaSeconds(key, video) {
+    const multiplier = playbackLockState?.video === video ? getEffectivePlaybackLockSeekMultiplier() : 1;
+    const direction = key === 'ArrowRight' ? 1 : -1;
+    return direction * settings.shortSeekSeconds * multiplier;
   }
 
   function beginLongPress(holdState) {
@@ -373,7 +409,7 @@
     }
 
     if (applyShortPress) {
-      const deltaSeconds = holdState.key === 'ArrowRight' ? settings.shortSeekSeconds : -settings.shortSeekSeconds;
+      const deltaSeconds = getSeekDeltaSeconds(holdState.key, holdState.video);
       seekVideo(holdState.video, deltaSeconds);
       return;
     }
