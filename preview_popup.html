@@ -1,0 +1,276 @@
+<!doctype html>
+<html lang="zh-CN">
+  <head>
+    <meta charset="utf-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1">
+    <title>Popup Preview</title>
+    <style>
+      :root {
+        color-scheme: light;
+        --bg: linear-gradient(180deg, #f8fafc 0%, #e0f2fe 48%, #dbeafe 100%);
+        --card-bg: rgba(255, 255, 255, 0.84);
+        --card-border: rgba(148, 163, 184, 0.22);
+        --card-shadow: 0 14px 34px rgba(15, 23, 42, 0.12);
+        --text-main: #0f172a;
+        --text-muted: #475569;
+        --accent: #0284c7;
+        --accent-strong: #0f766e;
+        --success: #047857;
+        font-family: "SF Pro Display", "PingFang SC", "Microsoft YaHei", sans-serif;
+      }
+
+      * { box-sizing: border-box; }
+
+      body {
+        margin: 0;
+        min-height: 100vh;
+        display: flex;
+        align-items: center;
+        justify-content: center;
+        background: #94a3b8;
+      }
+
+      /* 模拟浏览器扩展弹窗尺寸 */
+      .preview-frame {
+        width: 376px;
+        background: var(--bg);
+        border-radius: 12px;
+        overflow: hidden;
+        box-shadow: 0 24px 60px rgba(0,0,0,0.35);
+      }
+
+      .popup-shell { padding: 10px; }
+
+      .popup-card {
+        border: 1px solid var(--card-border);
+        border-radius: 22px;
+        background: var(--card-bg);
+        box-shadow: var(--card-shadow);
+        backdrop-filter: blur(16px);
+        -webkit-backdrop-filter: blur(16px);
+        padding: 20px;
+      }
+
+      .eyebrow {
+        margin: 0;
+        color: var(--accent);
+        font-size: 11px;
+        font-weight: 700;
+        text-transform: uppercase;
+        letter-spacing: 0.18em;
+      }
+
+      h1 {
+        margin: 6px 0 6px;
+        font-size: 22px;
+        line-height: 1.05;
+        color: var(--text-main);
+      }
+
+      .summary {
+        margin: 0 0 8px;
+        color: var(--text-muted);
+        font-size: 12px;
+        line-height: 1.45;
+      }
+
+      .switch-list, .field-list {
+        display: grid;
+        gap: 6px;
+      }
+
+      .switch-list {
+        grid-template-columns: repeat(2, minmax(0, 1fr));
+      }
+
+      .switch-row {
+        display: flex;
+        align-items: center;
+        justify-content: space-between;
+        gap: 10px;
+        padding: 7px 10px;
+        border-radius: 16px;
+        background: rgba(255, 255, 255, 0.72);
+      }
+
+      .switch-row span, label span {
+        display: block;
+        font-size: 12px;
+        font-weight: 600;
+        color: var(--text-main);
+      }
+
+      .switch-row input {
+        width: 18px;
+        height: 18px;
+        accent-color: var(--accent);
+      }
+
+      .field-list {
+        margin-top: 6px;
+        grid-template-columns: repeat(2, minmax(0, 1fr));
+      }
+
+      .field-list label {
+        display: block;
+        padding: 3px 0px;
+        border-radius: 16px;
+        background: rgba(255, 255, 255, 0.72);
+      }
+
+      .field-list label:last-child {
+        grid-column: 1 / -1;
+      }
+
+      .field-list label span {
+        margin-bottom: 4px;
+      }
+
+      input[type="number"] {
+        width: 100%;
+        padding: 7px 9px;
+        border-radius: 12px;
+        border: 1px solid rgba(148, 163, 184, 0.25);
+        background: rgba(255, 255, 255, 0.92);
+        color: var(--text-main);
+        font: inherit;
+        font-size: 13px;
+      }
+
+      .site-preview {
+        margin-top: 6px;
+        padding: 8px 10px;
+        border-radius: 16px;
+        background: linear-gradient(135deg, rgba(224, 242, 254, 0.95), rgba(219, 234, 254, 0.88));
+      }
+
+      .site-preview-title {
+        margin: 0 0 3px;
+        font-size: 11px;
+        font-weight: 700;
+        color: var(--accent-strong);
+        text-transform: uppercase;
+        letter-spacing: 0.08em;
+      }
+
+      .site-preview-text {
+        margin: 0;
+        color: var(--text-muted);
+        font-size: 12px;
+        line-height: 1.4;
+      }
+
+      .status {
+        min-height: 18px;
+        margin-top: 6px;
+        color: var(--success);
+        font-size: 12px;
+        font-weight: 700;
+      }
+
+      .text-button {
+        appearance: none;
+        border: 0;
+        background: transparent;
+        padding: 0;
+        margin-top: 6px;
+        color: var(--accent);
+        font: inherit;
+        font-size: 12px;
+        font-weight: 700;
+        cursor: pointer;
+        display: block;
+        width: 100%;
+        text-align: center;
+      }
+
+      .button-row {
+        display: flex;
+        gap: 8px;
+        margin-top: 6px;
+      }
+
+      .primary-button, .ghost-button {
+        flex: 1;
+        appearance: none;
+        border: 0;
+        border-radius: 999px;
+        padding: 9px 12px;
+        font: inherit;
+        font-weight: 700;
+        cursor: pointer;
+        font-size: 13px;
+      }
+
+      .primary-button {
+        background: linear-gradient(135deg, #0ea5e9, #0284c7);
+        color: #f8fafc;
+      }
+
+      .ghost-button {
+        border: 1px solid rgba(148, 163, 184, 0.25);
+        background: rgba(255, 255, 255, 0.78);
+        color: var(--text-main);
+      }
+    </style>
+  </head>
+  <body>
+    <div class="preview-frame">
+      <main class="popup-shell">
+        <section class="popup-card">
+          <p class="eyebrow">Quick Controls</p>
+          <h1>播放器快捷设置</h1>
+          <p class="summary">直接修改常用参数，数字改完会自动保存。</p>
+
+          <div class="switch-list">
+            <label class="switch-row">
+              <span>启用扩展</span>
+              <input type="checkbox" checked>
+            </label>
+            <label class="switch-row">
+              <span>显示页面提示</span>
+              <input type="checkbox" checked>
+            </label>
+          </div>
+
+          <div class="field-list">
+            <label>
+              <span>短按跳转秒数</span>
+              <input type="number" value="5">
+            </label>
+            <label>
+              <span>长按判定时间</span>
+              <input type="number" value="280">
+            </label>
+            <label>
+              <span>右键快进倍速</span>
+              <input type="number" value="2.75">
+            </label>
+            <label>
+              <span>左键快退倍速</span>
+              <input type="number" value="2.75">
+            </label>
+            <label>
+              <span>锁定跳转倍率</span>
+              <input type="number" placeholder="跟随锁定倍速">
+            </label>
+          </div>
+
+          <div class="site-preview">
+            <p class="site-preview-title">当前站点策略</p>
+            <p class="site-preview-text">当前为全部网站生效模式。</p>
+          </div>
+
+          <div class="status"></div>
+
+          <div class="button-row">
+            <button type="button" class="primary-button">完成设置</button>
+            <button type="button" class="ghost-button">恢复默认</button>
+          </div>
+
+          <button type="button" class="text-button">跳转到完整设置</button>
+        </section>
+      </main>
+    </div>
+  </body>
+</html>
