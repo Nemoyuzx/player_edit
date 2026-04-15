@@ -69,13 +69,13 @@
 
     if (activeHold?.longPressActive) {
       const overlayCopy = getHoldOverlayCopy(activeHold.key);
-      showOverlay(overlayCopy.title, overlayCopy.detail, true, 0);
+      showOverlay(overlayCopy.title, overlayCopy.detail, true, 0, false, activeHold.video);
       return;
     }
 
     if (playbackLockState?.video?.isConnected) {
       const overlayCopy = getPlaybackLockOverlayCopy();
-      showOverlay(overlayCopy.title, overlayCopy.detail, true, 0);
+      showOverlay(overlayCopy.title, overlayCopy.detail, true, 0, false, playbackLockState.video);
       return;
     }
 
@@ -181,8 +181,35 @@
     return Math.min(Math.max(nextTime, 0), duration);
   }
 
-  function ensureOverlay() {
-    if (overlayState?.root?.isConnected) {
+  function resolveOverlayMount(video = null) {
+    if (document.fullscreenElement instanceof Element) {
+      return document.fullscreenElement;
+    }
+
+    const rootNode = video?.getRootNode?.();
+    if (rootNode instanceof ShadowRoot && rootNode.host instanceof Element) {
+      return rootNode.host;
+    }
+
+    if (video?.parentElement instanceof Element) {
+      return video.parentElement;
+    }
+
+    return document.body || document.documentElement;
+  }
+
+  function ensureOverlay(video = null) {
+    const mount = resolveOverlayMount(video);
+    if (!mount) {
+      return null;
+    }
+
+    if (overlayState?.root) {
+      if (!overlayState.root.isConnected || overlayState.mount !== mount) {
+        mount.appendChild(overlayState.root);
+        overlayState.mount = mount;
+      }
+
       return overlayState;
     }
 
@@ -197,28 +224,31 @@
 
     root.append(title, detail);
 
-    const mount = document.documentElement || document.body;
-    if (!mount) {
-      return null;
-    }
-
     mount.appendChild(root);
     overlayState = {
       root,
       title,
       detail,
-      hideTimer: null
+      hideTimer: null,
+      mount
     };
 
     return overlayState;
   }
 
-  function showOverlay(message, detailText, accent = false, duration = 750, restorePersistentState = false) {
+  function showOverlay(
+    message,
+    detailText,
+    accent = false,
+    duration = 750,
+    restorePersistentState = false,
+    anchorVideo = null
+  ) {
     if (!settings.showOverlay) {
       return;
     }
 
-    const overlay = ensureOverlay();
+    const overlay = ensureOverlay(anchorVideo);
     if (!overlay) {
       return;
     }
@@ -272,7 +302,7 @@
     playbackLockState = null;
 
     if (showMessage) {
-      showOverlay('已解除倍速锁定', '同时按下上下方向键可再次开启', false, 900);
+      showOverlay('已解除倍速锁定', '同时按下上下方向键可再次开启', false, 900, false, lockedVideo);
     }
   }
 
@@ -294,7 +324,7 @@
     video.playbackRate = settings.fastForwardRate;
 
     const overlayCopy = getPlaybackLockOverlayCopy();
-    showOverlay(overlayCopy.title, overlayCopy.detail, true, 0);
+    showOverlay(overlayCopy.title, overlayCopy.detail, true, 0, false, video);
     return true;
   }
 
@@ -324,7 +354,8 @@
       detailText,
       isPlaybackLockSeeking,
       isPlaybackLockSeeking ? 900 : 750,
-      isPlaybackLockSeeking
+      isPlaybackLockSeeking,
+      video
     );
   }
 
@@ -351,7 +382,7 @@
       }
 
       const overlayCopy = getHoldOverlayCopy(key);
-      showOverlay(overlayCopy.title, overlayCopy.detail, true, 0);
+      showOverlay(overlayCopy.title, overlayCopy.detail, true, 0, false, holdState.video);
       return;
     }
 
@@ -366,7 +397,7 @@
     }, HOLD_REWIND_INTERVAL_MS);
 
     const overlayCopy = getHoldOverlayCopy(key);
-    showOverlay(overlayCopy.title, overlayCopy.detail, true, 0);
+    showOverlay(overlayCopy.title, overlayCopy.detail, true, 0, false, holdState.video);
   }
 
   function clearHoldState(applyShortPress) {
@@ -400,11 +431,18 @@
 
       if (playbackLockState?.video === holdState.video) {
         const overlayCopy = getPlaybackLockOverlayCopy();
-        showOverlay(overlayCopy.title, overlayCopy.detail, true, 0);
+        showOverlay(overlayCopy.title, overlayCopy.detail, true, 0, false, holdState.video);
         return;
       }
 
-      showOverlay('已恢复正常播放', `短按左右方向键可跳转 ${settings.shortSeekSeconds} 秒`, false, 550);
+      showOverlay(
+        '已恢复正常播放',
+        `短按左右方向键可跳转 ${settings.shortSeekSeconds} 秒`,
+        false,
+        550,
+        false,
+        holdState.video
+      );
       return;
     }
 
@@ -567,6 +605,19 @@
 
       stopEvent(event);
       clearHoldState(true);
+    },
+    true
+  );
+
+  window.addEventListener(
+    'fullscreenchange',
+    () => {
+      if (!overlayState?.root) {
+        return;
+      }
+
+      ensureOverlay(activeHold?.video || playbackLockState?.video || getPreferredVideo());
+      refreshOverlayForCurrentState();
     },
     true
   );
