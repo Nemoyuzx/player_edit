@@ -4,9 +4,13 @@
   const MIN_VIDEO_HEIGHT = 90;
   const BILIBILI_SUBTITLE_BUTTON_SELECTOR = '.bpx-player-ctrl-btn.bpx-player-ctrl-subtitle, .bpx-player-ctrl-subtitle';
   const BILIBILI_SUBTITLE_ICON_SELECTOR = '.bpx-player-ctrl-btn-icon > span, .bpx-player-ctrl-btn-icon';
+  const BILIBILI_SUBTITLE_MENU_ITEM_SELECTOR =
+    '.bpx-player-ctrl-subtitle-language-item, .bpx-player-ctrl-subtitle-language-item-text, [class*="subtitle-language-item"]';
+  const BILIBILI_SUBTITLE_TEXT_SELECTOR = '.bpx-player-subtitle-panel-text, [class*="subtitle-panel-text"]';
   const BILIBILI_VIDEO_SELECTOR = 'div.bpx-player-video-perch video, .bpx-player-video-wrap video, video';
   const AUTO_SUBTITLE_RETRY_INTERVAL_MS = 350;
   const AUTO_SUBTITLE_RETRY_LIMIT = 24;
+  const AUTO_SUBTITLE_CLICK_COOLDOWN_MS = 1200;
   const configApi = globalThis.VideoArrowRebindConfig;
 
   let activeHold = null;
@@ -32,7 +36,12 @@
     retryCount: 0,
     video: null,
     metadataHandler: null,
-    lastActivationKey: ''
+    urlTimer: null,
+    lastHref: window.location.href,
+    lastActivationKey: '',
+    lastActivationAt: 0,
+    lastFallbackActivationKey: '',
+    lastNotifiedKey: ''
   };
 
   function getHoldOverlayCopy(key) {
@@ -222,8 +231,60 @@
     }
   }
 
+  function hasVisibleBilibiliSubtitleText() {
+    return Array.from(document.querySelectorAll(BILIBILI_SUBTITLE_TEXT_SELECTOR)).some((element) => {
+      if (!element.isConnected) {
+        return false;
+      }
+
+      const rect = element.getBoundingClientRect();
+      const style = window.getComputedStyle(element);
+      return rect.width > 0 && rect.height > 0 && style.display !== 'none' && style.visibility !== 'hidden';
+    });
+  }
+
+  function dispatchMouseEvent(element, type) {
+    if (!(element instanceof Element)) {
+      return;
+    }
+
+    const rect = element.getBoundingClientRect();
+    element.dispatchEvent(
+      new MouseEvent(type, {
+        bubbles: true,
+        clientX: rect.left + rect.width / 2,
+        clientY: rect.top + rect.height / 2
+      })
+    );
+  }
+
+  function pulseBilibiliPlayer() {
+    const player = document.querySelector('.bpx-player-container, .bpx-player-video-wrap, video');
+    ['mouseenter', 'mouseover', 'mousemove'].forEach((eventName) => dispatchMouseEvent(player, eventName));
+  }
+
+  function openBilibiliSubtitleMenu(button) {
+    pulseBilibiliPlayer();
+    ['mouseenter', 'mouseover', 'mousemove'].forEach((eventName) => dispatchMouseEvent(button, eventName));
+  }
+
+  function getPreferredBilibiliSubtitleMenuItem() {
+    const menuItems = Array.from(document.querySelectorAll(BILIBILI_SUBTITLE_MENU_ITEM_SELECTOR))
+      .map((item) => item.closest('.bpx-player-ctrl-subtitle-language-item') || item)
+      .filter((item, index, list) => item.isConnected && list.indexOf(item) === index)
+      .map((item) => ({ item, text: String(item.textContent || '').trim() }))
+      .filter(({ text }) => text && !/关闭|off|none|无字幕|不显示/i.test(text));
+
+    return (
+      menuItems.find(({ text }) => /^中文$|简体|繁体|中[国文]|Chinese/i.test(text))?.item ||
+      menuItems.find(({ text }) => /中文|字幕|AI|自动/i.test(text))?.item ||
+      menuItems[0]?.item ||
+      null
+    );
+  }
+
   function getBilibiliSubtitleStatus(button, video) {
-    if (hasShowingTextTrack(video)) {
+    if (hasVisibleBilibiliSubtitleText() || hasShowingTextTrack(video)) {
       return 'on';
     }
 
@@ -274,6 +335,15 @@
     return `${window.location.href}|${source}|${duration}`;
   }
 
+  function showAutoSubtitleOverlay(video, activationKey) {
+    if (autoSubtitleState.lastNotifiedKey === activationKey) {
+      return;
+    }
+
+    autoSubtitleState.lastNotifiedKey = activationKey;
+    showOverlay('已自动打开字幕', 'B 站自动播放或切换视频后已尝试开启字幕', true, 1400, false, video);
+  }
+
   function tryEnableBilibiliSubtitle() {
     if (!shouldAutoEnableBilibiliSubtitle()) {
       return true;
@@ -291,13 +361,35 @@
     }
 
     const activationKey = getBilibiliSubtitleActivationKey(video);
-    if (autoSubtitleState.lastActivationKey === activationKey) {
-      return true;
+    if (
+      autoSubtitleState.lastActivationKey === activationKey &&
+      Date.now() - autoSubtitleState.lastActivationAt < AUTO_SUBTITLE_CLICK_COOLDOWN_MS
+    ) {
+      return false;
+    }
+
+    openBilibiliSubtitleMenu(button);
+
+    const menuItem = getPreferredBilibiliSubtitleMenuItem();
+    if (menuItem) {
+      autoSubtitleState.lastActivationKey = activationKey;
+      autoSubtitleState.lastActivationAt = Date.now();
+      menuItem.click();
+      showAutoSubtitleOverlay(video, activationKey);
+      return false;
     }
 
     const clickTarget = button.querySelector(BILIBILI_SUBTITLE_ICON_SELECTOR) || button;
+    if (autoSubtitleState.lastFallbackActivationKey === activationKey) {
+      return false;
+    }
+
     autoSubtitleState.lastActivationKey = activationKey;
+    autoSubtitleState.lastActivationAt = Date.now();
+    autoSubtitleState.lastFallbackActivationKey = activationKey;
     clickTarget.click();
+    showAutoSubtitleOverlay(video, activationKey);
+    scheduleAutoSubtitleCheck(1000);
     return true;
   }
 
@@ -333,6 +425,7 @@
     }
 
     if (autoSubtitleState.video && autoSubtitleState.metadataHandler) {
+      autoSubtitleState.video.removeEventListener('loadstart', autoSubtitleState.metadataHandler);
       autoSubtitleState.video.removeEventListener('loadedmetadata', autoSubtitleState.metadataHandler);
     }
 
@@ -346,9 +439,41 @@
     autoSubtitleState.metadataHandler = () => {
       autoSubtitleState.retryCount = 0;
       autoSubtitleState.lastActivationKey = '';
+      autoSubtitleState.lastFallbackActivationKey = '';
+      autoSubtitleState.lastNotifiedKey = '';
       scheduleAutoSubtitleCheck(1000);
     };
+    video.addEventListener('loadstart', autoSubtitleState.metadataHandler);
     video.addEventListener('loadedmetadata', autoSubtitleState.metadataHandler);
+  }
+
+  function syncAutoSubtitleUrlWatcher() {
+    if (!shouldAutoEnableBilibiliSubtitle()) {
+      if (autoSubtitleState.urlTimer) {
+        window.clearInterval(autoSubtitleState.urlTimer);
+        autoSubtitleState.urlTimer = null;
+      }
+
+      return;
+    }
+
+    if (autoSubtitleState.urlTimer) {
+      return;
+    }
+
+    autoSubtitleState.urlTimer = window.setInterval(() => {
+      if (autoSubtitleState.lastHref === window.location.href) {
+        return;
+      }
+
+      autoSubtitleState.lastHref = window.location.href;
+      autoSubtitleState.retryCount = 0;
+      autoSubtitleState.lastActivationKey = '';
+      autoSubtitleState.lastFallbackActivationKey = '';
+      autoSubtitleState.lastNotifiedKey = '';
+      syncAutoSubtitleVideoListener();
+      scheduleAutoSubtitleCheck(1000);
+    }, 1000);
   }
 
   function syncAutoSubtitleAutomation() {
@@ -363,13 +488,13 @@
         autoSubtitleState.observer = null;
       }
 
+      syncAutoSubtitleUrlWatcher();
       syncAutoSubtitleVideoListener();
       return;
     }
 
     if (!autoSubtitleState.observer && document.documentElement) {
       autoSubtitleState.observer = new MutationObserver(() => {
-        autoSubtitleState.retryCount = 0;
         syncAutoSubtitleVideoListener();
         scheduleAutoSubtitleCheck(120);
       });
@@ -381,6 +506,7 @@
       });
     }
 
+    syncAutoSubtitleUrlWatcher();
     syncAutoSubtitleVideoListener();
     autoSubtitleState.retryCount = 0;
     scheduleAutoSubtitleCheck(1000);
