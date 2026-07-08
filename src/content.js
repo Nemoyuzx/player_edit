@@ -2,6 +2,11 @@
   const HOLD_REWIND_INTERVAL_MS = 100;
   const MIN_VIDEO_WIDTH = 160;
   const MIN_VIDEO_HEIGHT = 90;
+  const BILIBILI_SUBTITLE_BUTTON_SELECTOR = '.bpx-player-ctrl-btn.bpx-player-ctrl-subtitle, .bpx-player-ctrl-subtitle';
+  const BILIBILI_SUBTITLE_ICON_SELECTOR = '.bpx-player-ctrl-btn-icon > span, .bpx-player-ctrl-btn-icon';
+  const BILIBILI_VIDEO_SELECTOR = 'div.bpx-player-video-perch video, .bpx-player-video-wrap video, video';
+  const AUTO_SUBTITLE_RETRY_INTERVAL_MS = 350;
+  const AUTO_SUBTITLE_RETRY_LIMIT = 24;
   const configApi = globalThis.VideoArrowRebindConfig;
 
   let activeHold = null;
@@ -16,9 +21,18 @@
     longPressMs: 280,
     fastForwardRate: 3,
     playbackLockSeekMultiplier: null,
+    autoBilibiliSubtitle: false,
     fastRewindRate: 3,
     siteMode: 'all',
     siteRules: ''
+  };
+  const autoSubtitleState = {
+    observer: null,
+    retryTimer: null,
+    retryCount: 0,
+    video: null,
+    metadataHandler: null,
+    lastActivationKey: ''
   };
 
   function getHoldOverlayCopy(key) {
@@ -103,6 +117,7 @@
     }
 
     refreshOverlayForCurrentState();
+    syncAutoSubtitleAutomation();
   }
 
   if (configApi?.loadSettings) {
@@ -174,6 +189,201 @@
       const rightRect = right.getBoundingClientRect();
       return rightRect.width * rightRect.height - leftRect.width * leftRect.height;
     })[0];
+  }
+
+  function isBilibiliVideoPage() {
+    const hostname = window.location.hostname.replace(/^www\./, '');
+    const isBilibiliHost = hostname === 'bilibili.com' || hostname.endsWith('.bilibili.com');
+    const isKnownPlayerPath = window.location.pathname.startsWith('/video/') || window.location.pathname.startsWith('/bangumi/play/');
+    return isBilibiliHost && (isKnownPlayerPath || Boolean(document.querySelector('.bpx-player-container')));
+  }
+
+  function shouldAutoEnableBilibiliSubtitle() {
+    if (!settings.enabled || !settings.autoBilibiliSubtitle || !isBilibiliVideoPage()) {
+      return false;
+    }
+
+    return !(configApi?.isCurrentSiteAllowed && !configApi.isCurrentSiteAllowed(settings, window.location.hostname));
+  }
+
+  function getBilibiliVideo() {
+    return getPreferredVideo() || document.querySelector(BILIBILI_VIDEO_SELECTOR);
+  }
+
+  function findBilibiliSubtitleButton() {
+    return Array.from(document.querySelectorAll(BILIBILI_SUBTITLE_BUTTON_SELECTOR)).find((button) => button.isConnected) ?? null;
+  }
+
+  function hasShowingTextTrack(video) {
+    try {
+      return Array.from(video?.textTracks ?? []).some((track) => track.mode === 'showing');
+    } catch {
+      return false;
+    }
+  }
+
+  function getBilibiliSubtitleStatus(button, video) {
+    if (hasShowingTextTrack(video)) {
+      return 'on';
+    }
+
+    if (!button) {
+      return 'unknown';
+    }
+
+    if (
+      button.matches('.bpx-state-disabled, .disabled, .is-disabled, [aria-disabled="true"]') ||
+      button.closest('[aria-disabled="true"]')
+    ) {
+      return 'unavailable';
+    }
+
+    if (
+      button.matches('.bpx-state-active, .active, .is-active, [aria-pressed="true"], [data-state="active"]') ||
+      button.querySelector('.bpx-state-active, .active, .is-active, [aria-pressed="true"], [data-state="active"]')
+    ) {
+      return 'on';
+    }
+
+    const statusText = [
+      button.getAttribute('aria-label'),
+      button.getAttribute('aria-checked'),
+      button.getAttribute('aria-pressed'),
+      button.getAttribute('title'),
+      button.getAttribute('data-title'),
+      button.getAttribute('data-state'),
+      button.textContent
+    ]
+      .filter(Boolean)
+      .join(' ');
+
+    if (/关闭字幕|字幕已开|已开启字幕|隐藏字幕|subtitles?\s*on|captions?\s*on/i.test(statusText)) {
+      return 'on';
+    }
+
+    if (/开启字幕|打开字幕|显示字幕|字幕已关|未开启字幕|subtitles?\s*off|captions?\s*off/i.test(statusText)) {
+      return 'off';
+    }
+
+    return 'unknown';
+  }
+
+  function getBilibiliSubtitleActivationKey(video) {
+    const source = video?.currentSrc || video?.src || '';
+    const duration = Number.isFinite(video?.duration) ? video.duration : '';
+    return `${window.location.href}|${source}|${duration}`;
+  }
+
+  function tryEnableBilibiliSubtitle() {
+    if (!shouldAutoEnableBilibiliSubtitle()) {
+      return true;
+    }
+
+    const video = getBilibiliVideo();
+    const button = findBilibiliSubtitleButton();
+    if (!button) {
+      return false;
+    }
+
+    const status = getBilibiliSubtitleStatus(button, video);
+    if (status === 'on' || status === 'unavailable') {
+      return true;
+    }
+
+    const activationKey = getBilibiliSubtitleActivationKey(video);
+    if (autoSubtitleState.lastActivationKey === activationKey) {
+      return true;
+    }
+
+    const clickTarget = button.querySelector(BILIBILI_SUBTITLE_ICON_SELECTOR) || button;
+    autoSubtitleState.lastActivationKey = activationKey;
+    clickTarget.click();
+    return true;
+  }
+
+  function scheduleAutoSubtitleCheck(delay = AUTO_SUBTITLE_RETRY_INTERVAL_MS) {
+    if (autoSubtitleState.retryTimer) {
+      window.clearTimeout(autoSubtitleState.retryTimer);
+    }
+
+    if (!shouldAutoEnableBilibiliSubtitle()) {
+      return;
+    }
+
+    autoSubtitleState.retryTimer = window.setTimeout(() => {
+      autoSubtitleState.retryTimer = null;
+      syncAutoSubtitleVideoListener();
+
+      if (tryEnableBilibiliSubtitle()) {
+        autoSubtitleState.retryCount = 0;
+        return;
+      }
+
+      if (autoSubtitleState.retryCount < AUTO_SUBTITLE_RETRY_LIMIT) {
+        autoSubtitleState.retryCount += 1;
+        scheduleAutoSubtitleCheck();
+      }
+    }, delay);
+  }
+
+  function syncAutoSubtitleVideoListener() {
+    const video = shouldAutoEnableBilibiliSubtitle() ? getBilibiliVideo() : null;
+    if (autoSubtitleState.video === video) {
+      return;
+    }
+
+    if (autoSubtitleState.video && autoSubtitleState.metadataHandler) {
+      autoSubtitleState.video.removeEventListener('loadedmetadata', autoSubtitleState.metadataHandler);
+    }
+
+    autoSubtitleState.video = video;
+    autoSubtitleState.metadataHandler = null;
+
+    if (!video) {
+      return;
+    }
+
+    autoSubtitleState.metadataHandler = () => {
+      autoSubtitleState.retryCount = 0;
+      autoSubtitleState.lastActivationKey = '';
+      scheduleAutoSubtitleCheck(1000);
+    };
+    video.addEventListener('loadedmetadata', autoSubtitleState.metadataHandler);
+  }
+
+  function syncAutoSubtitleAutomation() {
+    if (!shouldAutoEnableBilibiliSubtitle()) {
+      if (autoSubtitleState.retryTimer) {
+        window.clearTimeout(autoSubtitleState.retryTimer);
+        autoSubtitleState.retryTimer = null;
+      }
+
+      if (autoSubtitleState.observer) {
+        autoSubtitleState.observer.disconnect();
+        autoSubtitleState.observer = null;
+      }
+
+      syncAutoSubtitleVideoListener();
+      return;
+    }
+
+    if (!autoSubtitleState.observer && document.documentElement) {
+      autoSubtitleState.observer = new MutationObserver(() => {
+        autoSubtitleState.retryCount = 0;
+        syncAutoSubtitleVideoListener();
+        scheduleAutoSubtitleCheck(120);
+      });
+      autoSubtitleState.observer.observe(document.documentElement, {
+        childList: true,
+        subtree: true,
+        attributes: true,
+        attributeFilter: ['aria-label', 'aria-pressed', 'class', 'data-state', 'title']
+      });
+    }
+
+    syncAutoSubtitleVideoListener();
+    autoSubtitleState.retryCount = 0;
+    scheduleAutoSubtitleCheck(1000);
   }
 
   function clampTime(video, nextTime) {

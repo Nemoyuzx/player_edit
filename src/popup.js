@@ -13,6 +13,7 @@
     longPressMs: document.querySelector('#longPressMs'),
     fastForwardRate: document.querySelector('#fastForwardRate'),
     playbackLockSeekMultiplier: document.querySelector('#playbackLockSeekMultiplier'),
+    autoBilibiliSubtitle: document.querySelector('#autoBilibiliSubtitle'),
     fastRewindRate: document.querySelector('#fastRewindRate')
   };
 
@@ -58,6 +59,7 @@
     fields.fastForwardRate.value = String(settings.fastForwardRate);
     fields.playbackLockSeekMultiplier.value =
       settings.playbackLockSeekMultiplier == null ? '' : String(settings.playbackLockSeekMultiplier);
+    fields.autoBilibiliSubtitle.checked = settings.autoBilibiliSubtitle;
     fields.fastRewindRate.value = String(settings.fastRewindRate);
     siteSummary.textContent = describeSiteMode(settings);
   }
@@ -71,6 +73,7 @@
       longPressMs: fields.longPressMs.value,
       fastForwardRate: fields.fastForwardRate.value,
       playbackLockSeekMultiplier: fields.playbackLockSeekMultiplier.value,
+      autoBilibiliSubtitle: fields.autoBilibiliSubtitle.checked,
       fastRewindRate: fields.fastRewindRate.value
     });
   }

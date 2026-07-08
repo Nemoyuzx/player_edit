@@ -103,12 +103,29 @@ label span {
   background: rgba(255, 255, 255, 0.72);
 }
 
+.field-list .field-switch {
+  grid-column: 1 / -1;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 10px;
+}
+
 .field-list label:last-child {
   grid-column: 1 / -1;
 }
 
+.field-switch input {
+  width: 18px;
+  height: 18px;
+}
+
 .field-list label span {
   margin-bottom: 4px;
+}
+
+.field-list .field-switch span {
+  margin-bottom: 0;
 }
 
 input[type="number"] {

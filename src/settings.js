@@ -7,6 +7,7 @@
     longPressMs: 280,
     fastForwardRate: 3,
     playbackLockSeekMultiplier: null,
+    autoBilibiliSubtitle: false,
     fastRewindRate: 3,
     siteMode: 'all',
     siteRules: ''
@@ -77,6 +78,7 @@
       longPressMs: clampNumber(rawSettings.longPressMs, DEFAULT_SETTINGS.longPressMs, 120, 1200),
       fastForwardRate: clampNumber(rawSettings.fastForwardRate, DEFAULT_SETTINGS.fastForwardRate, 1.25, 16),
       playbackLockSeekMultiplier: clampOptionalNumber(rawSettings.playbackLockSeekMultiplier, null, 1, 16),
+      autoBilibiliSubtitle: rawSettings.autoBilibiliSubtitle === true,
       fastRewindRate: clampNumber(rawSettings.fastRewindRate, DEFAULT_SETTINGS.fastRewindRate, 1.25, 16),
       siteMode: ['all', 'whitelist', 'blacklist'].includes(rawSettings.siteMode) ? rawSettings.siteMode : DEFAULT_SETTINGS.siteMode,
       siteRules: normalizeSiteRules(rawSettings.siteRules)
