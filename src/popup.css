@@ -103,29 +103,12 @@ label span {
   background: rgba(255, 255, 255, 0.72);
 }
 
-.field-list .field-switch {
-  grid-column: 1 / -1;
-  display: flex;
-  align-items: center;
-  justify-content: space-between;
-  gap: 10px;
-}
-
 .field-list label:last-child {
   grid-column: 1 / -1;
 }
 
-.field-switch input {
-  width: 18px;
-  height: 18px;
-}
-
 .field-list label span {
   margin-bottom: 4px;
-}
-
-.field-list .field-switch span {
-  margin-bottom: 0;
 }
 
 input[type="number"] {
@@ -188,6 +171,16 @@ input[type="number"]:focus {
   display: block;
   width: 100%;
   text-align: center;
+}
+
+.bottom-switch-section {
+  margin-top: 8px;
+  padding-top: 8px;
+  border-top: 1px solid rgba(148, 163, 184, 0.3);
+}
+
+.bottom-switch-row {
+  padding: 6px 10px;
 }
 
 .button-row {
