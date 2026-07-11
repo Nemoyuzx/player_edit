@@ -9,7 +9,7 @@
   const BILIBILI_SUBTITLE_TEXT_SELECTOR = '.bpx-player-subtitle-panel-text, [class*="subtitle-panel-text"]';
   const BILIBILI_VIDEO_SELECTOR = 'div.bpx-player-video-perch video, .bpx-player-video-wrap video, video';
   const AUTO_SUBTITLE_RETRY_INTERVAL_MS = 350;
-  const AUTO_SUBTITLE_RETRY_LIMIT = 24;
+  const AUTO_SUBTITLE_RETRY_LIMIT = 60;
   const AUTO_SUBTITLE_CLICK_COOLDOWN_MS = 1200;
   const configApi = globalThis.VideoArrowRebindConfig;
 
@@ -33,6 +33,7 @@
   const autoSubtitleState = {
     observer: null,
     retryTimer: null,
+    retryDueAt: 0,
     retryCount: 0,
     video: null,
     metadataHandler: null,
@@ -41,7 +42,8 @@
     lastActivationKey: '',
     lastActivationAt: 0,
     lastFallbackActivationKey: '',
-    lastNotifiedKey: ''
+    lastNotifiedKey: '',
+    needsMediaReactivation: false
   };
 
   function getHoldOverlayCopy(key) {
@@ -122,7 +124,7 @@
       Number.isFinite(settings.fastForwardRate) &&
       settings.fastForwardRate > 0
     ) {
-      playbackLockState.video.playbackRate = settings.fastForwardRate;
+      enforcePlaybackLock(playbackLockState.video);
     }
 
     refreshOverlayForCurrentState();
@@ -284,10 +286,6 @@
   }
 
   function getBilibiliSubtitleStatus(button, video) {
-    if (hasVisibleBilibiliSubtitleText() || hasShowingTextTrack(video)) {
-      return 'on';
-    }
-
     if (!button) {
       return 'unknown';
     }
@@ -299,9 +297,25 @@
       return 'unavailable';
     }
 
+    // B 站会给当前选中的“关闭”项加 bpx-state-active。不能再用按钮内
+    // 任意 active 子节点判断字幕已开启，否则关闭状态会被稳定地误判为开启。
+    if (
+      button.querySelector(
+        '.bpx-player-ctrl-subtitle-close-switch.bpx-state-active, .bpx-player-ctrl-subtitle-close-switch.active'
+      )
+    ) {
+      return 'off';
+    }
+
+    if (hasVisibleBilibiliSubtitleText() || hasShowingTextTrack(video)) {
+      return 'on';
+    }
+
     if (
       button.matches('.bpx-state-active, .active, .is-active, [aria-pressed="true"], [data-state="active"]') ||
-      button.querySelector('.bpx-state-active, .active, .is-active, [aria-pressed="true"], [data-state="active"]')
+      button.querySelector(
+        '.bpx-player-ctrl-subtitle-language-item.bpx-state-active, .bpx-player-ctrl-subtitle-language-item.active'
+      )
     ) {
       return 'on';
     }
@@ -356,7 +370,7 @@
     }
 
     const status = getBilibiliSubtitleStatus(button, video);
-    if (status === 'on' || status === 'unavailable') {
+    if (status === 'unavailable' || (status === 'on' && !autoSubtitleState.needsMediaReactivation)) {
       return true;
     }
 
@@ -374,8 +388,15 @@
     if (menuItem) {
       autoSubtitleState.lastActivationKey = activationKey;
       autoSubtitleState.lastActivationAt = Date.now();
+      autoSubtitleState.needsMediaReactivation = false;
       menuItem.click();
       showAutoSubtitleOverlay(video, activationKey);
+      return false;
+    }
+
+    // B 站切集时旧字幕文本和按钮激活态可能会短暂残留。此时直接点击
+    // 字幕按钮反而可能把字幕关闭，因此等语言菜单渲染后再明确选择一项。
+    if (autoSubtitleState.needsMediaReactivation && status === 'on') {
       return false;
     }
 
@@ -387,6 +408,7 @@
     autoSubtitleState.lastActivationKey = activationKey;
     autoSubtitleState.lastActivationAt = Date.now();
     autoSubtitleState.lastFallbackActivationKey = activationKey;
+    autoSubtitleState.needsMediaReactivation = false;
     clickTarget.click();
     showAutoSubtitleOverlay(video, activationKey);
     scheduleAutoSubtitleCheck(1000);
@@ -394,16 +416,26 @@
   }
 
   function scheduleAutoSubtitleCheck(delay = AUTO_SUBTITLE_RETRY_INTERVAL_MS) {
-    if (autoSubtitleState.retryTimer) {
-      window.clearTimeout(autoSubtitleState.retryTimer);
-    }
-
     if (!shouldAutoEnableBilibiliSubtitle()) {
       return;
     }
 
+    const dueAt = Date.now() + delay;
+    if (autoSubtitleState.retryTimer) {
+      // B 站的弹幕和播放器 DOM 会持续变化。保留已经安排且更早的检查，
+      // 避免 MutationObserver 不断重置定时器导致字幕逻辑永远得不到执行。
+      if (autoSubtitleState.retryDueAt <= dueAt) {
+        return;
+      }
+
+      window.clearTimeout(autoSubtitleState.retryTimer);
+    }
+
+    autoSubtitleState.retryDueAt = dueAt;
+
     autoSubtitleState.retryTimer = window.setTimeout(() => {
       autoSubtitleState.retryTimer = null;
+      autoSubtitleState.retryDueAt = 0;
       syncAutoSubtitleVideoListener();
 
       if (tryEnableBilibiliSubtitle()) {
@@ -441,6 +473,7 @@
       autoSubtitleState.lastActivationKey = '';
       autoSubtitleState.lastFallbackActivationKey = '';
       autoSubtitleState.lastNotifiedKey = '';
+      autoSubtitleState.needsMediaReactivation = true;
       scheduleAutoSubtitleCheck(1000);
     };
     video.addEventListener('loadstart', autoSubtitleState.metadataHandler);
@@ -471,6 +504,7 @@
       autoSubtitleState.lastActivationKey = '';
       autoSubtitleState.lastFallbackActivationKey = '';
       autoSubtitleState.lastNotifiedKey = '';
+      autoSubtitleState.needsMediaReactivation = true;
       syncAutoSubtitleVideoListener();
       scheduleAutoSubtitleCheck(1000);
     }, 1000);
@@ -481,6 +515,7 @@
       if (autoSubtitleState.retryTimer) {
         window.clearTimeout(autoSubtitleState.retryTimer);
         autoSubtitleState.retryTimer = null;
+        autoSubtitleState.retryDueAt = 0;
       }
 
       if (autoSubtitleState.observer) {
@@ -631,8 +666,13 @@
     }
 
     const lockedVideo = playbackLockState.video;
+    if (playbackLockState.enforcementTimer) {
+      window.clearInterval(playbackLockState.enforcementTimer);
+    }
+
     if (lockedVideo?.isConnected) {
       lockedVideo.playbackRate = playbackLockState.originalPlaybackRate ?? 1;
+      lockedVideo.defaultPlaybackRate = playbackLockState.originalDefaultPlaybackRate ?? 1;
     }
 
     playbackLockState = null;
@@ -655,13 +695,53 @@
     clearPlaybackLock(false);
     playbackLockState = {
       video,
-      originalPlaybackRate: video.playbackRate
+      originalPlaybackRate: video.playbackRate,
+      originalDefaultPlaybackRate: video.defaultPlaybackRate,
+      enforcementTimer: null
     };
+    video.defaultPlaybackRate = settings.fastForwardRate;
     video.playbackRate = settings.fastForwardRate;
+    playbackLockState.enforcementTimer = window.setInterval(() => {
+      enforcePlaybackLock();
+    }, 250);
 
     const overlayCopy = getPlaybackLockOverlayCopy();
     showOverlay(overlayCopy.title, overlayCopy.detail, true, 0, false, video);
     return true;
+  }
+
+  function enforcePlaybackLock(video = null) {
+    if (!playbackLockState) {
+      return;
+    }
+
+    const nextVideo = video instanceof HTMLVideoElement && video.isConnected
+      ? video
+      : getPreferredVideo() || playbackLockState.video;
+    if (!(nextVideo instanceof HTMLVideoElement) || !nextVideo.isConnected) {
+      return;
+    }
+
+    if (playbackLockState.video !== nextVideo) {
+      playbackLockState.video = nextVideo;
+      playbackLockState.originalPlaybackRate = nextVideo.playbackRate;
+      playbackLockState.originalDefaultPlaybackRate = nextVideo.defaultPlaybackRate;
+      ensureOverlay(nextVideo);
+    }
+
+    if (nextVideo.defaultPlaybackRate !== settings.fastForwardRate) {
+      nextVideo.defaultPlaybackRate = settings.fastForwardRate;
+    }
+
+    if (nextVideo.playbackRate !== settings.fastForwardRate) {
+      nextVideo.playbackRate = settings.fastForwardRate;
+    }
+  }
+
+  function schedulePlaybackLockEnforcement(video, delays = [0]) {
+    delays.forEach((delay) => {
+      window.setTimeout(() => enforcePlaybackLock(video), delay);
+    });
   }
 
   function stopEvent(event) {
@@ -838,6 +918,33 @@
 
     return Boolean(getPreferredVideo());
   }
+
+  ['loadstart', 'loadedmetadata', 'play', 'playing', 'ratechange'].forEach((eventName) => {
+    window.addEventListener(
+      eventName,
+      (event) => {
+        if (!playbackLockState || !(event.target instanceof HTMLVideoElement)) {
+          return;
+        }
+
+        if (event.target !== playbackLockState.video && !isVideoUsable(event.target)) {
+          return;
+        }
+
+        if (eventName === 'ratechange') {
+          if (event.target.playbackRate !== settings.fastForwardRate) {
+            schedulePlaybackLockEnforcement(event.target);
+          }
+          return;
+        }
+
+        // B 站会在换源后的多个阶段再次写回默认倍速，因此在媒体事件发生时
+        // 立即恢复，并在播放器初始化完成后的两个时间点再次确认。
+        schedulePlaybackLockEnforcement(event.target, [0, 250, 1000]);
+      },
+      true
+    );
+  });
 
   window.addEventListener(
     'keydown',
