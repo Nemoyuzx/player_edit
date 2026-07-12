@@ -245,7 +245,7 @@
     });
   }
 
-  function dispatchMouseEvent(element, type) {
+  function dispatchMouseEvent(element, type, relatedTarget = null) {
     if (!(element instanceof Element)) {
       return;
     }
@@ -255,7 +255,8 @@
       new MouseEvent(type, {
         bubbles: true,
         clientX: rect.left + rect.width / 2,
-        clientY: rect.top + rect.height / 2
+        clientY: rect.top + rect.height / 2,
+        relatedTarget
       })
     );
   }
@@ -268,6 +269,24 @@
   function openBilibiliSubtitleMenu(button) {
     pulseBilibiliPlayer();
     ['mouseenter', 'mouseover', 'mousemove'].forEach((eventName) => dispatchMouseEvent(button, eventName));
+  }
+
+  function closeBilibiliSubtitleMenu(button) {
+    window.setTimeout(() => {
+      if (!button?.isConnected) {
+        return;
+      }
+
+      const player = document.querySelector('.bpx-player-container, .bpx-player-video-wrap, video');
+      const menu = button.querySelector('.bpx-player-ctrl-subtitle-menu, .bpx-player-ctrl-subtitle-box');
+      ['mouseout', 'mouseleave', 'pointerout', 'pointerleave'].forEach((eventName) => {
+        dispatchMouseEvent(menu, eventName, player);
+        dispatchMouseEvent(button, eventName, player);
+      });
+
+      // 把播放器的悬停状态落回视频区域，只显示控制栏，不点击视频以免暂停。
+      ['mouseover', 'mousemove'].forEach((eventName) => dispatchMouseEvent(player, eventName, button));
+    }, 100);
   }
 
   function getPreferredBilibiliSubtitleMenuItem() {
@@ -390,6 +409,7 @@
       autoSubtitleState.lastActivationAt = Date.now();
       autoSubtitleState.needsMediaReactivation = false;
       menuItem.click();
+      closeBilibiliSubtitleMenu(button);
       showAutoSubtitleOverlay(video, activationKey);
       return false;
     }
